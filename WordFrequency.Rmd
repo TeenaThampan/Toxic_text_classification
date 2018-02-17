@@ -1,0 +1,104 @@
+---
+title: "Capstone_toxicity"
+author: "Teena"
+date: '2018-02-11'
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+install packages
+```{r}
+#install.packages("data.table")
+#install.packages("tm")
+update.packages("tm",  checkBuilt = TRUE)
+install.packages("SnowballC")
+install.packages("rsconnect")
+install.packages("ReporteRs")
+library("data.table")
+library("tm")
+library(SnowballC)
+library(rsconnect)
+library(ReporteRs)
+```
+importing of training data
+```{r}
+#data = fread("train.csv", header = "auto", sep="auto", nrows=-1L,blank.lines.skip=TRUE)
+```
+exploratory analysis
+```{r}
+summary(data)
+str(data)
+dim(data)
+colSums(sapply(data, is.na))
+data2<-data[,c(3:8)]
+x<-barplot(colSums(data2), ylim = c(0,20000), xlab="type of toxicity", ylab="frequency", main ="Frequency of each toxicity level")
+y<-as.matrix(colSums(data2))
+text(x, y, labels=as.character(y), pos = 3, cex=1)
+
+#unique words in each category
+
+```
+
+frequency of words
+```{r}
+comment <- data$comment_text
+sentences<-gsub("\\.","",comment)
+sentences1<-gsub("\\,","",sentences)
+words1 <- tolower(sentences1)
+words2 <- strsplit(words1, "\\W")
+words3 <- unlist(words2)
+freq <- table(words3)
+freq1 <- sort(freq, decreasing = TRUE)
+head(freq1,20)
+temple.sorted.table <- paste(names(freq1), freq1, sep="\t")
+cat("Word\tFreQ", temple.sorted.table, file="mywordfreq.txt", sep="\n")
+```
+
+```{r}
+comment <- Corpus(VectorSource(data$comment_text))
+document<- tm_map(comment, content_transformer(tolower))
+removeNumPunct <- function(x) gsub("[^[:alpha:][:space:]]*", "", x)
+document <- tm_map(document, content_transformer(removeNumPunct))
+myStopwords <- c(setdiff(stopwords('english'), c("r", "big")), "a", "the", "to", "i", "of", "and", "a", "is", "it", "in", "that", "for", "are", "have")
+document<- tm_map(document, removeWords, myStopwords)
+document<- tm_map(document, stripWhitespace)
+
+documentcopy <- document
+document <- tm_map(document, stemDocument)
+
+stemCompletion2 <- function(x, dictionary) {
+  x <- unlist(strsplit(as.character(x), " "))
+  x <- x[x != ""]
+  x <- stemCompletion(x, dictionary=dictionary)
+  x<- paste(x, sep="", collapse=" ")
+  PlainTextDocument(stripWhitespace(x))
+}
+document <- lapply(document, stemCompletion2, dictionary=documentcopy)
+document <- Corpus(VectorSource(document))
+
+wordFreq <- function(corpus, word) {
+  results <- lapply(corpus,function(x) { grep(as.character(x), pattern=paste0("\\<", word))})
+sum(unlist(results))
+}
+n.miner <- wordFreq(documentcopy, "miner")
+n.mining <- wordFreq(documentcopy, "mining")
+cat(n.miner, n.mining)
+
+tdm <- TermDocumentMatrix(document, control = list(wordLengths = c(1,Inf)))
+tdm
+
+idx <- which(dimnames(tdm)$Terms %in% c("r", "data", "mining"))
+as.matrix(tdm[idx, 21:30])
+
+freq.terms <- findFreqTerms(tdm, lowfreq = 20)
+term.freq <- rowSums(as.matrix(tdm))
+term.freq <- subset(term.freq, term.freq>=20)
+df <- data.frame(term = names(term.freq), freq = term.freq)
+
+library(ggplot2)
+ggplot(df, aes(x=term, y=freq)) + geom_bar(stat="identify") + xlab("Terms") + ylab("Count") + coord_flip() + theme(axis.text=element_text(size=7))
+
+```
+
