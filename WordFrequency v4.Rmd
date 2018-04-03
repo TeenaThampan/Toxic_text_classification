@@ -1,22 +1,25 @@
 ---
-title: "Capstone_toxicity"
+title: "Toxic Multilabel classification"
 author: "Teena"
-date: '2018-03-26'
+date: '2018-03-31'
 output:
   html_document:
     df_print: paged
-  word_document: default
   pdf_document: default
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
 # install packages
 ```{r}
-
-# build ROC which isthe same as AUC , confusion matrix , graphing the AUC plot
-
 
 #install.packages("data.table")
 #install.packages("tm")
@@ -396,7 +399,7 @@ trainWords <- train %>%
 
 total_words <- trainWords %>% 
   group_by(toxic,severe_toxic,obscene,threat,insult,identity_hate) %>% 
-  summarize(total = sum(n))
+  summarise(total = sum(n))
 
 total_words
 
@@ -590,7 +593,7 @@ datasetTest = datasetTest[ , (colnames(datasetTest) %in% colnamesSame)]
 ```
 
 
-#Train and Test split
+#Train and Test split - using XGBoost
 ```{r}
 #partitioning data
 
@@ -630,7 +633,19 @@ part_test <- dataset[-train_index,]
 
 formula = toxic ~ .
 
-fitControl <- trainControl(method="none",classProbs=TRUE, summaryFunction=twoClassSummary)
+#fitControl <- trainControl(method="none",classProbs=TRUE, summaryFunction=twoClassSummary)
+fitControl <- trainControl(method="cv", number = 3, returnResamp = "all", classProbs=TRUE, summaryFunction=twoClassSummary, allowParallel = T)
+#fitControl <- trainControl(method="repeatedcv", number = 10, repeats = 3, classProbs=TRUE, summaryFunction=twoClassSummary)
+
+# (nrounds = 500, #number of iterations
+# eta = .05, #learning rate lies between 0.01 - 0.30
+# max_depth = 3, #controls the depth of the tree default is 6 but range 0 - Inf
+# gamma = 0, #controls regularization to prevent overfitting, default is 0
+# lambda = 0, #controls L2 regularization on weight to prevent overfitting
+# colsample_bytree = .8, #controls the number of features supplied to a tree lies between 0.5 - 0.9
+# min_child_weight = 1, # leaf node has a min sum of instance wgt < min_child_wgt, the tree splitting stops.
+# subsample = 1 # controls the number of samples supplied to the tree range 0 - 1 with default at 1
+
 xgbGrid <- expand.grid(nrounds = 500, 
                        eta = .3,
                        max_depth = 6,
@@ -641,14 +656,21 @@ xgbGrid <- expand.grid(nrounds = 500,
 
 
 set.seed(13)
+start_time <-Sys.time()
 
 ToxicXGBt = train(formula, data = part_train,
                  method = "xgbTree",trControl = fitControl,
-                 tuneGrid = xgbGrid,na.action = na.pass,metric="ROC", maximize=FALSE)
+                 tuneGrid = xgbGrid,na.action = na.pass,metric="ROC", maximize = FALSE)
+
+ToxicXGBt
+
+end_time <-Sys.time()
+end_time - start_time
 
 predToxict = predict(ToxicXGBt,part_test,type ='prob')
 predToxict.resp <- ifelse(predToxict$X1 >= 0.80, 1, 0)
 confusionMatrix(predToxict.resp,part_test_toxic, positive = "1")
+
 
 #####################################################################################################
 
@@ -677,8 +699,9 @@ SToxicXGBt = train(formula, data = part_train,
                  method = "xgbTree",trControl = fitControl,
                  tuneGrid = xgbGrid,na.action = na.pass,metric="ROC", maximize=FALSE)
 
-end_time <-Sys.time()
+SToxicXGBt
 
+end_time <-Sys.time()
 end_time - start_time
 
 predSToxict = predict(SToxicXGBt,part_test,type ='prob')
@@ -690,17 +713,152 @@ confusionMatrix(predSToxict.resp,part_test_severe_toxic, positive = "1")
 ```
 
 
+```{r}
+
+# cross validation of Obscene training data
+set.seed(17)
+
+#labels for train and test
+obscene <- train[train_index,]$obscene
+part_test_obscene <- train[-train_index,]$obscene
+
+part_train <- cbind(dataset[train_index,],obscene)
+part_train$obscene = as.factor(part_train$obscene)
+levels(part_train$obscene) = make.names(unique(part_train$obscene))
+part_test <- dataset[-train_index,]
+
+formula = obscene ~ .
+
+set.seed(13)
+
+start_time <-Sys.time()
+ObsceneXGBt = train(formula, data = part_train,
+                 method = "xgbTree",trControl = fitControl,
+                 tuneGrid = xgbGrid,na.action = na.pass,metric="ROC", maximize=FALSE)
+
+ObsceneXGBt
+
+end_time <-Sys.time()
+end_time - start_time
+
+predObscenet = predict(ObsceneXGBt,part_test,type ='prob')
+predObscenet.resp <- ifelse(predObscenet$X1 >= 0.80, 1, 0)
+confusionMatrix(predObscenet.resp,part_test_obscene, positive = "1")
+
+#####################################################################################################
+
+```
 
 
+```{r}
+
+# cross validation of Insult training data
+set.seed(17)
+
+#labels for train and test
+insult <- train[train_index,]$insult
+part_test_insult <- train[-train_index,]$insult
+
+part_train <- cbind(dataset[train_index,],insult)
+part_train$insult = as.factor(part_train$insult)
+levels(part_train$insult) = make.names(unique(part_train$insult))
+part_test <- dataset[-train_index,]
+
+formula = insult ~ .
+
+set.seed(13)
+
+start_time <-Sys.time()
+InsultXGBt = train(formula, data = part_train,
+                 method = "xgbTree",trControl = fitControl,
+                 tuneGrid = xgbGrid,na.action = na.pass,metric="ROC", maximize=FALSE)
+
+InsultXGBt
+
+end_time <-Sys.time()
+end_time - start_time
+
+predinsultt = predict(InsultXGBt,part_test,type ='prob')
+predinsultt.resp <- ifelse(predinsultt$X1 >= 0.80, 1, 0)
+confusionMatrix(predinsultt.resp,part_test_insult, positive = "1")
+
+#####################################################################################################
+
+```
 
 
+```{r}
 
+# cross validation of Identity Hate training data
+set.seed(17)
 
+#labels for train and test
+identity_hate <- train[train_index,]$identity_hate
+part_test_identity_hate <- train[-train_index,]$identity_hate
 
+part_train <- cbind(dataset[train_index,],identity_hate)
+part_train$identity_hate = as.factor(part_train$identity_hate)
+levels(part_train$identity_hate) = make.names(unique(part_train$identity_hate))
+part_test <- dataset[-train_index,]
+
+formula = identity_hate ~ .
+
+set.seed(13)
+
+start_time <-Sys.time()
+IHXGBt = train(formula, data = part_train,
+                 method = "xgbTree",trControl = fitControl,
+                 tuneGrid = xgbGrid,na.action = na.pass,metric="ROC", maximize=FALSE)
+
+IHXGBt
+
+end_time <-Sys.time()
+end_time - start_time
+
+predIHt = predict(IHXGBt,part_test,type ='prob')
+predIHt.resp <- ifelse(predIHt$X1 >= 0.80, 1, 0)
+confusionMatrix(predIHt.resp,part_test_identity_hate, positive = "1")
+
+#####################################################################################################
+
+```
+
+#Modelling using Naives Bayes
+
+# Using as a baseline for run time - only checking for Toxic labels and compare to XGBoost
+
+```{r}
+
+toxic <- train[train_index,]$toxic
+part_test_toxic <- train[-train_index,]$toxic
+
+part_train <- cbind(dataset[train_index,],toxic)
+part_train$toxic = as.factor(part_train$toxic)
+levels(part_train$toxic) = make.names(unique(part_train$toxic))
+
+# part_test_toxic$toxic = as.factor(part_test_toxic$toxic)
+# levels(part_test_toxic$toxic) = make.names(unique(part_test_toxic$toxic))
+part_test <- dataset[-train_index,]
+
+formula = toxic ~ .
+
+start_time<-Sys.time()
+
+ToxicNB <- naiveBayes(formula, data=part_train)
+predNBToxic = predict(ToxicNB,part_test, type = "class")
+
+end_time<-Sys.time()
+end_time-start_time
+
+predNBToxic.resp <- ifelse(predNBToxic == "X1", 1, 0)
+confusionMatrix(predNBToxic.resp,part_test_toxic, positive = "1")
+
+plot(predNBToxic)
+
+```
 
 
 #Modelling using XGBoost
-
 
 ##Toxic Calculation
 
@@ -716,36 +874,20 @@ levels(dataset2$toxic) = make.names(unique(dataset2$toxic))
 
 formula = toxic ~ .
 
-fitControl <- trainControl(method="none",classProbs=TRUE, summaryFunction=twoClassSummary)
-
-# (nrounds = 500, #number of iterations
-# eta = .05, #learning rate lies between 0.01 - 0.30
-# max_depth = 3, #controls the depth of the tree default is 6 but range 0 - Inf
-# gamma = 0, #controls regularization to prevent overfitting, default is 0
-# lambda = 0, #controls L2 regularization on weight to prevent overfitting
-# colsample_bytree = .8, #controls the number of features supplied to a tree lies between 0.5 - 0.9
-# min_child_weight = 1, # leaf node has a min sum of instance wgt < min_child_wgt, the tree splitting stops.
-# subsample = 1 # controls the number of samples supplied to the tree range 0 - 1 with default at 1
-
-xgbGrid <- expand.grid(nrounds = 500, 
-                       eta = .3,
-                       max_depth = 6,
-                       gamma = 0,
-                       colsample_bytree = .8, 
-                       min_child_weight = 1, 
-                       subsample = 1) 
-
-
 set.seed(13)
-
+start_time <-Sys.time()
 ToxicXGB = train(formula, data = dataset2,
                  method = "xgbTree",trControl = fitControl,
                  tuneGrid = xgbGrid,na.action = na.pass,metric="ROC", maximize=FALSE)
 
+ToxicXGB
+
+end_time <-Sys.time()
+end_time - start_time
+
 predToxic = predict(ToxicXGB,datasetTest,type ='prob')
+
 plot(predToxic)
-
-
 #####################################################################################################
 
 ```
@@ -765,13 +907,18 @@ levels(dataset2$severe_toxic) = make.names(unique(dataset2$severe_toxic))
 formula = severe_toxic ~ .
 
 set.seed(13)
-
+start_time <- Sys.time()
 SToxicXGB = train(formula, data = dataset2,
                  method = "xgbTree",trControl = fitControl,
                  tuneGrid = xgbGrid,na.action = na.pass,metric="ROC", maximize=FALSE)
+SToxicXGB
+
+end_time <- Sys.time()
+end_time-start_time
 
 predSToxic = predict(SToxicXGB,datasetTest,type ='prob')
 
+plot(predSToxic)
 #####################################################################################################
 
 ```
@@ -792,12 +939,18 @@ formula = obscene ~ .
 
 set.seed(13)
 
+start_time <- Sys.time()
 ObsceneXGB = train(formula, data = dataset2,
                  method = "xgbTree",trControl = fitControl,
                  tuneGrid = xgbGrid,na.action = na.pass,metric="ROC", maximize=FALSE)
 
+ObsceneXGB
+end_time <- Sys.time()
+end_time-start_time
+
 predObscene = predict(ObsceneXGB,datasetTest,type ='prob')
 
+plot(predObscene)
 
 #####################################################################################################
 
@@ -820,13 +973,17 @@ formula = threat ~ .
 
 set.seed(13)
 
+start_time<-Sys.time()
 ThreatXGB = train(formula, data = dataset2,
                  method = "xgbTree",trControl = fitControl,
                  tuneGrid = xgbGrid,na.action = na.pass,metric="ROC", maximize=FALSE)
 
+end_time <- Sys.time()
+end_time-start_time
+
 predThreat = predict(ThreatXGB,datasetTest,type ='prob')
 
-
+plot(predThreat)
 #####################################################################################################
 
 ```
@@ -847,12 +1004,18 @@ formula = insult ~ .
 
 set.seed(13)
 
+start_time <- Sys.time()
 InsultXGB = train(formula, data = dataset2,
                  method = "xgbTree",trControl = fitControl,
                  tuneGrid = xgbGrid,na.action = na.pass,metric="ROC", maximize=FALSE)
+InsultXGB
+
+end_time <- Sys.time()
+end_time-start_time
 
 predInsult = predict(InsultXGB,datasetTest,type ='prob')
 
+plot(predInsult)
 
 #####################################################################################################
 
@@ -874,13 +1037,18 @@ formula = identity_hate ~ .
 
 set.seed(13)
 
+start_time <- Sys.time()
 IHXGB = train(formula, data = dataset2,
                  method = "xgbTree",trControl = fitControl,
                  tuneGrid = xgbGrid,na.action = na.pass,metric="ROC", maximize=FALSE)
+IHXGB
+
+end_time <- Sys.time()
+end_time-start_time
 
 predIH = predict(IHXGB,datasetTest,type ='prob')
 
-
+plot(predIH)
 #####################################################################################################
 
 ```
@@ -899,7 +1067,7 @@ submission$insult = predInsult$X1
 submission$identity_hate = predIH$X1
 
 # Write it to file
-write.csv(submission, 'ToxicCommentsMar262018.csv', row.names = F)
+write.csv(submission, 'ToxicCommentsMar312018.csv', row.names = F)
 
 ```
 
